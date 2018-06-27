@@ -1,0 +1,19 @@
+1. Avoid oversampling area of interest
+	* randomise
+	* latin square
+	* do not run all your controls on 1 chip
+	* systematic sampling for non-sampled areas
+
+
+2. Control treatments in different batches
+
+
+3. Define your population and get an idea of its params (stratification)
+	* random effects
+	* pca
+
+
+4. Selection bias
+	* randomise
+	* match cases-controls
+

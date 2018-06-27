@@ -1,0 +1,36 @@
+---
+title: "knitr"
+author: "Samuel Perini"
+date: "6/12/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+library(knitr)
+knit_watch(".Rnw", knitr::knit2pdf)
+
+```{r, cache=TRUE}
+# does not recompile this chunk
+```
+
+FFmpeg
+brew install ffmpeg
+
+```{r fig.show='animate', interval=.2, ffmpeg.format='gif'}
+library(animation)
+```
+
+Docco style
+
+reprex package
+knitr::imgur_upload
+
+knit_expand
+aslo see glue package
+
+![fig moved here](`r knitr::fig_chunk('cars-plot','png')`)
+
+knitr::write_bib(c("knitr","shiny"))
+

@@ -1,0 +1,43 @@
+---
+title: "Challenge report"
+subtitle: "Subtitle report"
+author: "My Name"
+date: "`r format(Sys.Date(),format='%d/%m/%Y')`"
+output: 
+  html_document:
+    number_sections: true
+    code_folding: hide
+    df_print: paged
+    theme: flatly
+    highlight: kate
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Level 1 Heading
+
+I am not very good at it either.
+
+## Level 2 Heading
+
+Mistake accepted.
+
+```{r, echo=TRUE}
+str(mtcars)
+head(mtcars)
+```
+
+## Plot subsection
+```{r fig 1, fig.height=5,fig.width=5}
+with(mtcars, plot(mpg, hp))
+legend(title = "Caption", add=TRUE)
+```
+

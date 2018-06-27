@@ -1,0 +1,132 @@
+---
+title: "Untitled"
+author: "Samuel Perini"
+date: "6/18/2018"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#Check if you already have any of the required packages
+list.of.packages <- c("shiny","DT","dygraphs","leaflet","SpatialEpiApp","rgdal","INLA","dplyr","ggplot2","leaflet","geoR","raster","sp","spdep","SpatialEpi")
+
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+
+#Install the missing packages
+if(length(new.packages)) install.packages(new.packages)
+
+#Load packages (@hani)
+lapply(list.of.packages, library, character.only = TRUE)
+```
+
+
+```{r}
+library(SpatialEpi)
+library(tidyverse)
+data(pennLC)
+class(pennLC)
+names(pennLC)
+?pennLC
+head(pennLC$data)
+d = pennLC$data %>%
+  group_by(county) %>% summarise(tot_num=sum(cases))
+
+pennLC$data <- pennLC$data[order(pennLC$data$county, pennLC$data$race, pennLC$data$gender, pennLC$data$age), ]
+E <- expected(population = pennLC$data$population, cases = pennLC$data$cases, n.strata = 16)
+d$E <- E[match(d$county, unique(pennLC$data$county))]
+head(d)
+names(d)[2]="Y"
+head(pennLC$smoking)
+d = left_join(d, pennLC$smoking, by="county")
+d$SMR <- d$Y/d$E
+head(d)
+map <- pennLC$spatial.polygon
+rownames(d) <- d$county
+map <- SpatialPolygonsDataFrame(map, d, match.ID = TRUE)
+head(map@data)
+
+l <- leaflet(map) %>% addTiles()
+
+pal <- colorNumeric(palette = "YlOrRd", domain = map$SMR)
+
+l %>% addPolygons(color = "grey", weight = 1, fillColor = ~pal(SMR), fillOpacity = 0.5) %>%
+  addLegend(pal = pal, values = ~SMR, opacity = 0.5, title = "SMR", position = "bottomright")
+
+nb <- poly2nb(map)
+head(nb)
+nb2INLA("map.adj", nb)
+g <- inla.read.graph(filename = "map.adj")
+summary(g)
+
+map$re_u <- 1:nrow(map@data)
+map$re_v <- 1:nrow(map@data)
+formula <- Y ~ smoking + f(re_u, model = "besag", graph = g) + f(re_v, model = "iid")
+
+res <- inla(formula, family = "poisson", data = map@data, E = E, control.predictor = list(compute = TRUE))
+summary(res)
+```
+
+
+# Geostatistical data
+
+```{r}
+library(geoR)
+data(gambia)
+dim(gambia)
+
+head(gambia)
+
+library(dplyr)
+d <- group_by(gambia, x, y) %>% 
+  summarize(total = n(),
+            positive = sum(pos),
+            prev = positive/total)
+
+library(sp)
+library(rgdal)
+sps  <- SpatialPoints(d[, c("x", "y")], proj4string = CRS("+proj=utm +zone=28"))
+spst <- spTransform(sps, CRS("+proj=longlat +datum=WGS84"))
+coordinates(spst)
+d[, c("long", "lat")] <- coordinates(spst)
+head(d)
+
+library(leaflet)
+pal <- colorBin("viridis", bins = c(0, 0.25, 0.5, 0.75, 1))
+leaflet(d) %>%  addProviderTiles(providers$CartoDB.Positron) %>%
+  addCircles(lng = ~long, lat = ~lat, color = ~pal(prev)) %>%
+   addLegend("bottomright", pal = pal, values = ~prev, title = "Prevalence") %>%
+  addScaleBar(position = c("bottomleft"))
+
+library(raster)
+r <- getData(name = 'alt', country = 'GMB', mask = TRUE)
+r <- getData(name = 'alt', country = 'SWE', mask = TRUE)
+getData('ISO3')
+
+pal <- colorNumeric("viridis", values(r), na.color = "transparent")
+
+leaflet() %>% addProviderTiles(providers$CartoDB.Positron) %>%
+  addRasterImage(r, colors = pal, opacity = 0.5) %>%
+  addLegend("bottomright", pal = pal, values = values(r), title = "Altitude") %>%
+  addScaleBar(position = c("bottomleft"))
+
+
+d$alt <- extract(r, d[, c("long", "lat")])
+
+head(d)
+
+
+
+library(INLA)
+coo <- cbind(d$long, d$lat)
+mesh <- inla.mesh.2d(loc = coo, max.edge = c(0.1, 5), cutoff = 0.1)
+mesh$n
+plot(mesh)
+points(coo, col = "red")
+```
+

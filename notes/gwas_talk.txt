@@ -1,0 +1,118 @@
+Rising the amount of data would impact specially the way of comparing snips (by pairs, qould make rise )
+exp() the number of comparisons.
+
+That is more a thing that should be done wuth mahcine learning.
+
+There is a follow up of of the location of SNPs would change the calculation,
+since snps are linked and not really independent.
+
+There is haplotype associations that can
+you can do the haplotypeassociation with snps from the haplotypes, but the problem would be the same.
+
+Fisher exact or other test would cause the same problems. It would mostly depend on genetic architechture after all.
+
+
+Continuous traits may be more linked with Morgan (something)
+
+If a sickness is polygenic you can still do it and need a good sample size and it depends on the allele freq
+
+A lot of loci could contribute with very few  phenotypes.
+
+For rare alleles people would yse kernel association tests
+for each axon you can collapese all information as if it was a single snp.
+
+for 5 snips, you can categorize them and score them depending on the presence of the problem.
+Burden test -> Which allele is the one carring a problem (sicknesses)
+skat-test : It provides the way to give weights to predict and to give annotations for snps.
+
+you might end up knowing that a region is important, without knowing which snp is causing which phenotype.
+
+
+first you cut off the commons (1%)
+So all thos who have 1% or less will be retained. you can weightthem on the reverse on how frequent they are.
+If you have something super rare, you give it the biggest score (maybe a sequencing error).
+
+It depends on the architecture on how you are controling your trait.
+
+
+
+Splitting regions.
+
+Find the best SNP and use it as a fix effect  and re-run, so all those SNP (ld), they are correlated and they give some how the same signal, which will end up fixing how it work.
+
+
+
+If there is linkage and a polygenic effect you can accumulate variants to predispose for a disceace
+But you can end up N snps from the disceasse.
+
+
+
+If a populatiojn comes from a bottleneck it swipes genetic variants.
+So there are mostly haplotypes segregating with every generation.
+
+If there is another  bottleneck some generation later. But there would be some selection on this happlotypes which is dependant on the previous bottleneck.
+
+
+Conditionnal GWAS.
+
+ld, d' and sq{r} are some other measures
+
+d' is a measure of how long ago it happened,
+
+If all the alleles have a similar MAF it means they would be linked,
+
+R is used for the association analyses.
+
+
+Conditionnal vs inconditionnal GWAS
+
+The conditional was implemented in plink,
+
+
+RNR package in R alows to do this kind of things.
+
+
+
+Close testing - > You can do stepwise reduction of what you want to look at.
+you still don't have to look for another
+
+GLM, LASSO.
+
+Autocoder augorithm in machine learning.
+
+Random forest can't take too many features, It should be done chromosome by chromoosme or by windows
+
+
+Pairwise interactions can lower the power of the test, then you can take a look.
+
+Figure (pic) vGWAS ()
+
+figure(text): if you dim the main light you can more easily find which other lights turn on with the interruptors, whereas if you don't dim the main light, you can't see any light that you turn on.
+
+
+pGWAS for protein gwas
+
+
+Should you start by looking for interactions or to look for each.
+The standard way of doing is to start the single, then look for interactions.
+
+If you have some ld (linkage desequilibrium)
+
+
+Mehtod they used:
+
+LASSO then dim.
+
+It depends of the quesitons and the variables that are studied (environment, enviromental acquired morphology etc)
+
+
+How can you do GWAS how can you plan it in such a way to get some information from it.
+
+the effect size can affect the number of samples that you need
+you can try to simulate the different number of alleles that would be required.
+
+BioArchive, leif anderson from uppsala university
+
+
+estimating the minimum amount of individuals to sequence is quite hard.
+to effect size (in regression is the beta1 x1 / )

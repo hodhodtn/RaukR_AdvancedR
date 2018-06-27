@@ -1,0 +1,13 @@
+{
+    "path" : "~/Documents/research/PhD course/RaukR",
+    "sortOrder" : [
+        {
+            "ascending" : true,
+            "columnIndex" : 2
+        },
+        {
+            "ascending" : false,
+            "columnIndex" : 4
+        }
+    ]
+}

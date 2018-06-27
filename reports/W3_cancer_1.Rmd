@@ -1,0 +1,167 @@
+---
+title: "W3 cancer1"
+subtitle: "Review and interpret somatic mutations"
+author: "Markus Mayrhofer"
+date: "18-Jun-2018"
+output: 
+  html_document:
+    number_sections: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+## LIBRARIES AND VARIABLES
+# load the packages you need for this document
+
+library(bsplus)
+
+# variables needed in this document
+# raukr colours
+#rv_col_dark <- "#125687"
+#rv_col_light <- "#e7eef3"
+logo_raukr
+```
+
+In this exercise we will parse and review somatic mutations based on a single whole-genome sequenced tumor-normal pair.
+
+First, download the data (available with course material) and extract into a suitable working directory.
+
+
+# Point mutations
+
+Somatic point mutations include single-nucleotide substitutions (SNVs) and small insertions/deletions (indels) that have occurred somatic cells and are therefore not present in other cells of the same individual. Cells of a clonal expansion such as a tumor will carry any mutations present in their last common ancestor including mutations that gave rise to the cancer. We will now review the result from the variant caller Mutect, which is based on comparing sequence variants in tumor DNA with those in a patient-matched normal DNA. Although this example contains only SNVs, recent versions of Mutect will produce indels too. The result has been annotated with the Variant Effect Predictor (VEP).
+
+
+## Parse a VCF (Variant Call Format) file
+
+Parse mutect_vep.vcf and investigate its contents. Good options for parsing vcf files are VariantAnnotation and vcfR.
+
+```{r}
+library(bsplus)
+source("https://bioconductor.org/biocLite.R")
+biocLite('VariantAnnotation')
+library(VariantAnnotation)
+
+vcf=readVcf(file = 'data/W3_cancer_data/mutect_vep.vcf',genome = 'hg19') # this is a hard coded file path
+vcf
+info(vcf)
+dim(vcf)
+rowRanges(vcf)
+head(geno(vcf)[[1]])
+head(assay(vcf))
+dim(assay(vcf))
+#library(vcfR)
+#?read.vcfR
+#vcfr=read.vcfR(file = 'data/mutect_vep.vcf')
+#vcfr
+```
+
+
+
+In germline DNA, the allele ratio of variants are typically expeceted at either 0.5 or 1, depending on whether the variant is present on 1/2 or all copies of the locus. In a sample of tumor DNA, the allele ratio of somatic mutations depend on the tumor purity (fraction of cells in the sample that are part of the malignant clonal expansion) and the number of mutated and unmutated copies per cell.
+
+* Investigate the coverage and allele ratio of the mutations.
+* What reasons are there for low and high mutation allele ratio?
+* Can you say anything about tumor purity?
+
+```{r}
+library(data.table)
+mutations=data.table(name=names(vcf),
+                coverage=geno(vcf)$DP,
+                alleleratio=as.numeric(geno(vcf)$FA))
+summary(mutations)
+head(mutations)
+
+library(ggplot2)
+ggplot()+theme_light()+ggtitle('Mutation allele ratio')+xlab('')+
+  geom_point(mapping = aes(x=1:length(alleleratio),y=alleleratio,col=log10(coverage.HCC1143)),data = mutations)
+```
+
+
+Make a plot of mutation density or spacing throughout the genome.
+* Is it largely even?
+* Is is associated with coverage?
+
+```{r}
+r <- rowRanges(vcf)
+# let's add chromosome and position to the table
+mutations$chr=as.character(seqnames(r))
+mutations$pos=as.numeric(start(r))
+
+# and the distance to the next mutation
+mutations$spacing=c(diff(mutations$pos),0)
+tail(mutations)
+head(mutations, 15)
+
+ggplot()+theme_light()+ggtitle('Mutation spacing')+scale_y_log10()+xlab('')+
+  geom_point(mapping = aes(x=1:nrow(mutations),y=spacing,col=log10(coverage.HCC1143)),data=mutations)
+```
+
+
+## Explore annotations
+
+Tens of thousands of mutations is typical for many adult solid cancers. Most are so-called passenger mutations and have no impact on the development of disease. In order to identify driver mutations (which may influence diagnosis, prognosis and choice of treatment) we need to annotate all variants with their putative effect. There are many tools available for that, e.g. Annovar, Oncotator, SNP Effect and Variant Effect Predictor (VEP). We have used the latter (http://www.ensembl.org/info/docs/tools/vep/index.html) to annotate this vcf file and the result is available in the CSQ column of the INFO field of the vcf file. It is one or more pipe separated annotation chunks per variant. The annotation format is described in the VCF header.
+
+* Parse the annotations into a table. Merge it with your table of mutations.
+
+
+```{r}
+info=as.data.table(info(vcf))
+
+header(vcf)
+info(header(vcf))
+vep_header=strsplit(info(header(vcf))['CSQ',3],'Format: ')[[1]][2]
+vep_header=strsplit(vep_header,'\\|')[[1]]
+
+head(info$CSQ)
+
+# start with an empty matrix that fits the annotations (and one number that identifies which mutation it annotates)
+annotation_table=matrix(data = NA,nrow = length(unlist(info$CSQ)),ncol = length(vep_header)+1)
+colnames(annotation_table)=c('N',vep_header)
+row=1
+for (i in 1:nrow(info)) { # for each mutation
+  for (j in 1:length(info$CSQ[[i]])) { # for each VEP annotation of that mutation
+    line=strsplit(info$CSQ[[i]][j],'\\|')[[1]]
+    annotation_table[row,1]=i # to remember which mutation it belongs to
+    annotation_table[row,1+(1:length(line))]=line
+    row=row+1
+  }
+}
+
+# merge with the mutation table
+mutations$N=as.character(1:nrow(mutations))
+mutations=merge(mutations,as.data.table(annotation_table),by='N')
+head(mutations)
+```
+
+
+## Variant interpretation
+
+If we had a large number of samples, we could use MutSig (http://archive.broadinstitute.org/cancer/cga/mutsig) or MuSiC (http://archive.broadinstitute.org/cancer/cga/mutsig) to identify genes or genomic regions with a higher mutation frequency than expected from the background distribution. With a single sample we will instead focus on genes already known to be involved in cancer. You can download a list of known cancer genes from https://civicdb.org/releases, http://oncokb.org/#/cancerGenes or https://cancer.sanger.ac.uk/cosmic/download.
+
+* How many mutations do you find in known cancer genes?
+
+```{r}
+cancergenes=fread('https://civicdb.org/downloads/nightly/nightly-GeneSummaries.tsv')
+mutations_knowngene=mutations[SYMBOL %in% cancergenes$name]
+table(mutations_knowngene$Consequence[mutations_knowngene$IMPACT=="MODERATE"])
+table(mutations_knowngene$Consequence[mutations_knowngene$IMPACT=="LOW"])
+table(mutations_knowngene$IMPACT)
+head(mutations_knowngene[,1:10])
+factor(mutations_knowngene$IMPACT)
+```
+
+
+* Take a look at the “Consequence” column. How many do you think may be driver mutations?
+* Which consequences do you find if you limit the impact to “HIGH” and “MODERATE”?
+
+```{r}
+mutations[SYMBOL %in% cancergenes$name & IMPACT %in% c('HIGH','MODERATE')]
+```
+

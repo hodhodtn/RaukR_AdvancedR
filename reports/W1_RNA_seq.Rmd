@@ -1,0 +1,1014 @@
+---
+title: "W1 RNAseq"
+author: "Thomas Källman"
+date: "16-Jun-2018"
+output: 
+  html_document:
+    number_sections: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+
+
+# RNA-seq and Chip analysis in R
+
+
+
+This is the workshop material for the RNA sequence and chip sequence part of the RAUKR course 2018. The exercise consist of three main topics.
+
+1. Example analysis of gene expression step by step with examples solutions to most steps
+
+1. Identify a new data public RNA-seq data set and perform an analysis of differential expression
+
+1. Chip-sequence example
+
+As part of the exercise there are question and discussion points added throughout the exercise. The idea with this is that you discuss address these together with your nextdoor neighbor and/or the TAs in class. In addition to this we encourage you to use vignettes and other sources of information to identify different ways of solving the problem.
+
+
+## Introduction to tools and data used in the exercise
+
+The focus of this exercise will be to introduce some R packages that are commonly used in analysis of RNA-sequence and Chip-sequence data. Even though the purpose and ideas behind these two types of projects are very different there is in the analysis of data many similarities as they are both using the number of short reads mapping to different parts of the genome as their main data source.
+
+For both type of projects the first steps in the analysis eg. the mapping of short reads to a reference genome is often done outside R. For the RNA-seq part we will show how one can do this steps in R, but the majority of work on this workshop is put on later steps of the analysis as that is where R is really shining.
+
+### R Packages used in the lab
+
+In this exercise we will make heavy use of different bioconductor packages. Since bioconductor were introduced yesterday you probably remember how to install packages, otherwise click to reveal the code.
+
+```{r}
+source("https://bioconductor.org/biocLite.R")
+biocLite(c("recount", "GenomicRanges", "limma", "edgeR", "DESeq2",
+    "regionReport", "clusterProfiler", "org.Hs.eg.db", "gplots",
+    "derfinder", "rtracklayer", "GenomicFeatures", "bumphunter",
+    "derfinderPlot", "devtools", "Rsamtools", "csaw"))
+```
+
+
+You can go to <https://www.bioconductor.org> to learn more about the different packages, but here is an attempt at a single sentence summary of the different packages used
+
+* Shortread: Work with short read data (fastq files) in R
+
+* recount: Adds functions to interact with the recount2 data set (link)
+
+* GenomicRanges: The foundations of representing genomic coordinates in bioconductor
+
+* limma: Contain large number of functionality related to analysis of gene expression obtained from microarray and RNA-seq data
+
+* edgeR: Package devoloped to analyse count data from RNA-seq and Chip-seq like approaches
+
+* DESeq2: Provides methods to test for differential expression by use of negative binomial generalized linear models
+
+* org.Hs.eg.db: Annotation data for the human genome
+
+* EnsDb.Hsapiens.v86/EnsDb.Hsapiens.v75: Two different versions of the ensembl human genome annotation
+
+* rtracklayer: Interface to genome tracks and genome browsers (UCSC)
+
+* GenomicFeatures: Manages transcriptrelated information (UCSC, biomart)
+
+* devtools: To allow for easy install from github (and gitlab?) repositories
+
+*csaw: Package to analyse Chip-seq data in a windows-based fashion.
+
+*Rsubread: Adds functionality to map short read data to reference genomes and counting mapped reads on genomic regions.
+
+NB! The Rsubread package can not be easily installed on windows systems. If you are using a windows system there are some hints in the manual on how to proceed, but note that it is not heavily used in this exercise so there is no need to spend much time on it.
+
+* Rsamtools: R interface to samtools that modify/read/write sam and bam files
+
+
+## RNAseq
+
+### Access public RNA-seq data
+
+RNA-seq data are deposited in most cases made public via open sequence repositories such as <https://www.ncbi.nlm.nih.gov/geo/> and <https://www.ebi.ac.uk/arrayexpress/>. Both of these can be queried via the web, but they also have bioconductor packages so that one can query and download (at least parts of the data) directly from R.
+
+In addition to these there have been some major efforts in creating useful resources for the research community and make them publicly available. One such attempt is the <https://jhubiostatistics.shinyapps.io/recount/>. This project have collected more than 2000 human RNA-seq studies and re-analysed them in an effecient and consistent manner. In the examples here we will make use of data from the recount experiment, but to show a complete workflow from short reads to expression analysis we will first look at how to do all steps in a RNA-seq analysis from within R. For the first part of the exercise we will use some small example files that you can find in the rna_chip folder here.
+
+### Quality control of short read data
+
+The first step of the analysis in most projects using short read data is to have a look at the quality of the obtained data as that will determine weather we should filter the short reads prior to analysis as well as detect if there are any major issue with our data.
+
+There are many non-R based tools that do this and often the sequence center will supply quality summaries together with the actual sequence files. The quality relating to short reads are encoded directly in the fastq file so the tools are often just summarising this and do some basic sequence content analysis.
+
+Let us look at the information we find in a fastq file using the ShortRead package in R. Make sure you have downloaded the folder rna_chip to your computer before trying the commands. After loading the package we sample 10 reads at random from one of the supplied fastq files.
+
+```{r}
+library(ShortRead)
+sampler <- FastqSampler("~/data/SRR1424755_1.fastq.gz", n = 10)
+fq_ex <- yield(sampler)
+```
+
+
+What is the reason for importing data in this fashion compared to just reading the file directly?
+
+
+To look at actual data we can use the functions `sread` and `quality`, where the first show the actual sequence content and the latter shows the corresponding qualities encoded as asci characters.
+
+```{r}
+sread(fq_ex)
+quality(fq_ex)
+
+##   A DNAStringSet instance of length 10
+##      width seq
+##  [1]   101 CAGAGGAGCCTTTGCAAAGTAAGGAGTCGCA...GAGATCGGAAGAGCACACGTCTGAACTCCA
+##  [2]   101 AGGTAGTCGGTGAGATCGCGGCCCGCCCGGG...AATGGGGACGTTGTGGGGGGCGGCGGGGCC
+##  [3]   101 CAACAACAACAAACCCCACTAAGGTGTTGAA...ATACTCTGCTTTTTTATGTTTTGACTTTTA
+##  [4]   101 GTTCAACGTCAGAAATGGATATGGATTTATA...CTGCCATCAAGAAGAATAACCCACGGAAAT
+##  [5]   101 GGAGAGCACCTGTTGGAGTCTGATCTTTTCC...CTCCTTCCTGCGGAGATCGGAAGAGCACAC
+##  [6]   101 CAGAACTTTAAGCCGAGGTCCAACAGGGAAG...AAGAGCACACGTCTGAACTCCAGTCACCTT
+##  [7]   101 AGAATAGGAGGTGGAGTGCTGCTAGGGGGTT...GCTAGGGCTGCAATAATGAAGGGCAAGATG
+##  [8]   101 CTGAACACGGCCCAGGGGTCTTCTCATCAAA...CCAAAAGATCGGAAGAGCACACGTCTGAAC
+##  [9]   101 GGACATTCGTATTGCGCCGCTAGAGGTGAAA...GCCAAGAATGTTTTAGATCGGAAGAGCACA
+## [10]   101 GATCATTTCATATTGCTTCCGTGGAGTGTGG...GATTATGGTAGCGGAGGTGAAATATGCTCG
+## class: FastqQuality
+## quality:
+##   A BStringSet instance of length 10
+##      width seq
+##  [1]   101 BCCFFFFFDFHHGIGJIGIIGFHGJJACFGH...D?A;=CBBDB?AB<CBCBDDDDD3:@ACCC
+##  [2]   101 @@CDDFDFHHHHHJJJJJJJJJJI#######...##############################
+##  [3]   101 ?@<BBDD+AFDDHIGFEFCFGHHB4CCB??D...EE);;@DCEA>@C@>BCAAACC((5(>CA:
+##  [4]   101 @?@D?DDDDFCCAHD@DFBHEGGI<FHHIGG...IIIFCEAHDDEEECCACAACCBBBBBB?=:
+##  [5]   101 CCCFFFFFHGHHHJJJBHFHHIJJJIJJGJJ...CBDDCDDDDCDBB@BBDDDD@BB?BCCDDA
+##  [6]   101 ?@@FFABBCFAD?FBGII8<?CGI?FGGE@F...ACCBC<CBCBC?A?@CCCCCCCCCCCCCC@
+##  [7]   101 @@@DDDDDDHH+AF;FEEHIIGGGIIIIH?D...CACAABBCBBBC:@@ACCCCCCBBBBBCC:
+##  [8]   101 @@@DDDDDHDHHF7FGHG):?FFEHCHI>FH...CCCCCBCBCCBBBBBBBCCBCBBBBCBCC@
+##  [9]   101 B@+ADDFEHHHHHIJJJJJJJIJJJJCGIJJ...EDDDDDDDDDCDEDDDDDDDBDDDBDCAA#
+## [10]   101 @C@DFFFFBHFDHJGIJIJJIGIIFHBDHHH...>C@@ACC@@ACC>B5<9+(::>3>@D:AA0
+```
+
+
+Since quality control is such a common task the ShortRead library has a convient function that extracts some common plots and statistics from supplied fastq files.
+
+```{r}
+qaSummary <- qa(c("~/data/SRR1424755_1.fastq.gz", "~/data/SRR1424755_2.fastq.gz"), type="fastq")
+```
+
+
+The created object is a special class and contains the following information
+
+```{r}
+qaSummary
+## class: FastqQA(10)
+## QA elements (access with qa[["elt"]]):
+##   readCounts: data.frame(2 3)
+##   baseCalls: data.frame(2 5)
+##   readQualityScore: data.frame(1024 4)
+##   baseQuality: data.frame(190 3)
+##   alignQuality: data.frame(2 3)
+##   frequentSequences: data.frame(100 4)
+##   sequenceDistribution: data.frame(223 4)
+##   perCycle: list(2)
+##     baseCall: data.frame(979 4)
+##     quality: data.frame(7295 5)
+##   perTile: list(2)
+##     readCounts: data.frame(0 4)
+##     medianReadQualityScore: data.frame(0 4)
+##   adapterContamination: data.frame(2 1)
+
+## The content is much easier to read if we view it as a report.
+
+browseURL(report(qaSummary))
+```
+
+
+Make sure you understand the different plots generated?
+
+### Mapping reads | Rsubread
+
+Since we do not have access to compute resources besides our laptops we will just show the code how one can map short reads directly from R. The Rsubread package is for many not the first choice among short read mappers as its nor the fastest nor the most exact short read mapper. A common tool used for mapping short reads outside R is Star and Hisat. Do however note the difference among short reader mapper is usually not very large and for most projects the choice of mapper will not alter the end results significantly.
+
+#### Rsubread | index
+
+Prior to mapping we need to find a suitable genome and index it. The filed supplied in the rna_chip folder is recent fasta version of the Human chromosome 1 genome available at: <ftp://ftp.ensembl.org/pub/release-86/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.chromosome.1.fa.gz>. In order to save time we stick to chromosome 1 in this step, but in most cases the complete genome is used. The index is built with the following commands that saves the index files in the current working directory.
+
+
+```{r}
+library(Rsubread)
+buildindex(basename = "~/data/Hs_index", reference = "~data/HsChr1.fa")
+```
+
+
+#### Rsubread | align
+
+For this exercise we have a single pair-end library, hence two files. The forward reads with a “_1" in the filename and the corresponding reverse reads containing “_2“.
+
+```{r}
+read1names <- list.files(path = "~/data", full.names = TRUE, pattern = "_1")
+read2names <- list.files(path = "~/data", full.names = TRUE, pattern = "_2")
+
+align(index="~/data/Hs_index", readfile1 = read1names, readfile2 = read2names, type = "rna",
+output_file = "~/data/SRR14.bam", minFragLength = 10, 
+maxFragLength = 600, nthreads = 2)
+```
+
+
+If this were a real data set you would have multiple libraries. How would you modify the code above to work for such a scenario?
+
+Note if you have installed Rsubread and want to give this a try be prepared to wait for the analysis (it took between 5-10 minutes on a fairly modern mac laptop).
+
+If this would be done for all samples in your project one would at this step have one bam file for every sample now be ready for counting reads.
+
+
+
+### Count mapped read data
+
+In order to convert the mapped reads to counts we need to count reads that map to part of the genome that corresponds to exons/transcripts or genes. For this we need to have an annotation file corresponding to the genome sequence we mapped to. The easiest way to make sure that this is the case is to download both sequence and annotation files from the same repository and preferably at the same time to avoid having different versions.
+
+In bioconductor we have access to several different types of annotation information so we can also directly in R obtain an object with the necessary information.
+
+#### Annotations directly in R
+
+The Ensembl data can be accessed in R via packages named along these lines EnsDb.Species.version##. So the latest version of the human genome annotation that is available on bioconductor is v86 and is loaded as follows.
+
+```{r}
+library(EnsDb.Hsapiens.v86)
+
+edb86 <- EnsDb.Hsapiens.v86 # for less typing
+edb86
+## EnsDb for Ensembl:
+## |Backend: SQLite
+## |Db type: EnsDb
+## |Type of Gene ID: Ensembl Gene ID
+## |Supporting package: ensembldb
+## |Db created by: ensembldb package from Bioconductor
+## |script_version: 0.3.0
+## |Creation time: Thu May 18 16:32:27 2017
+## |ensembl_version: 86
+## |ensembl_host: localhost
+## |Organism: homo_sapiens
+## |taxonomy_id: 9606
+## |genome_build: GRCh38
+## |DBSCHEMAVERSION: 2.0
+## | No. of genes: 63970.
+## | No. of transcripts: 216741.
+## |Protein data available.
+```
+
+
+This is a very comprehensive annotation that contains ensembl genes as well as other predicted genes on the genome. Since we in our small mapping effort have mapped only towards Chromosome 1 we can start by filtering the object to only retain information from this chromosome.
+
+
+```{r}
+EnsGenes <- exonsBy(edb86, by = "gene", filter = AnnotationFilterList(
+                      SeqNameFilter(1)))
+EnsGenes
+## GRangesList object of length 5264:
+## $ENSG00000000457 
+## GRanges object with 29 ranges and 1 metadata column:
+##        seqnames              ranges strand |         exon_id
+##           <Rle>           <IRanges>  <Rle> |     <character>
+##    [1]        1 169894007-169894267      - | ENSE00001762331
+##    [2]        1 169893788-169893959      - | ENSE00001021870
+##    [3]        1 169893788-169893952      - | ENSE00001819895
+##    [4]        1 169888676-169888890      - | ENSE00003656990
+##    [5]        1 169888676-169888890      - | ENSE00003606895
+##    ...      ...                 ...    ... .             ...
+##   [25]        1 169855796-169855957      - | ENSE00001316145
+##   [26]        1 169854270-169854964      - | ENSE00000789668
+##   [27]        1 169854511-169854964      - | ENSE00001718821
+##   [28]        1 169849631-169853772      - | ENSE00003704126
+##   [29]        1 169853074-169853772      - | ENSE00001445605
+## 
+## ...
+## <5263 more elements>
+## -------
+## seqinfo: 1 sequence from GRCh38 genome
+```
+
+
+
+#### Counting reads
+
+With this Granges list available we can use the function `summarizeOverlaps` from the GenomicAligment package to count the reads available in the bam file that we generated earlier (if you did not create the file you can find it a copy in the rna_chip folder).
+
+```{r}
+library(GenomicAlignments)
+PE_ga <- summarizeOverlaps(EnsGenes, "~/data/SRR14.bam")
+```
+
+
+This create a `RangedSummarizedExperiment` that holds the counts as well other information about the project.
+
+Another option is to use `featureCounts` from the Rsubread package to count reads. It can read GTF files directly, but also support an simpler format called SAF and we can create this easily from the GrangesList we just created.
+
+
+```{r}
+EnsGenes.SAF <- toSAF(EnsGenes)
+library(Rsubread)
+bams <- list.files(path = "~/data", pattern = "bam$",
+                   recursive = FALSE,
+                   full.names = TRUE)
+PE_rs <- featureCounts(files = bams,
+                       annot.ext = EnsGenes.SAF,
+                       isPairedEnd = TRUE,
+                       nthreads = 4)
+## 
+##         ==========     _____ _    _ ____  _____  ______          _____  
+##         =====         / ____| |  | |  _ \|  __ \|  ____|   /\   |  __ \ 
+##           =====      | (___ | |  | | |_) | |__) | |__     /  \  | |  | |
+##             ====      \___ \| |  | |  _ <|  _  /|  __|   / /\ \ | |  | |
+##               ====    ____) | |__| | |_) | | \ \| |____ / ____ \| |__| |
+##         ==========   |_____/ \____/|____/|_|  \_\______/_/    \_\_____/
+##        Rsubread 1.30.3
+## 
+## //========================== featureCounts setting ===========================\\
+## ||                                                                            ||
+## ||             Input files : 1 BAM file                                       ||
+## ||                           P SRR14.bam                                      ||
+## ||                                                                            ||
+## ||             Output file : .Rsubread_featureCounts_pid64742                 ||
+## ||                 Summary : .Rsubread_featureCounts_pid64742.summary         ||
+## ||              Annotation : .Rsubread_UserProvidedAnnotation_pid64742 (SAF)  ||
+## ||      Dir for temp files : .                                                ||
+## ||                 Threads : 4                                                ||
+## ||                   Level : meta-feature level                               ||
+## ||              Paired-end : yes                                              ||
+## ||         Strand specific : no                                               ||
+## ||      Multimapping reads : not counted                                      ||
+## || Multi-overlapping reads : not counted                                      ||
+## ||   Min overlapping bases : 1                                                ||
+## ||                                                                            ||
+## ||          Chimeric reads : counted                                          ||
+## ||        Both ends mapped : not required                                     ||
+## ||                                                                            ||
+## \\===================== http://subread.sourceforge.net/ ======================//
+## 
+## //================================= Running ==================================\\
+## ||                                                                            ||
+## || Load annotation file .Rsubread_UserProvidedAnnotation_pid64742 ...         ||
+## ||    Features : 63360                                                        ||
+## ||    Meta-features : 5264                                                    ||
+## ||    Chromosomes/contigs : 1                                                 ||
+## ||                                                                            ||
+## || Process BAM file SRR14.bam...                                              ||
+## ||    Paired-end reads are included.                                          ||
+## ||    Assign fragments (read pairs) to features...                            ||
+## ||    Total fragments : 8956756                                               ||
+## ||    Successfully assigned fragments : 1598403 (17.8%)                       ||
+## ||    Running time : 0.17 minutes                                             ||
+## ||                                                                            ||
+## ||                         Read assignment finished.                          ||
+## ||                                                                            ||
+## \\===================== http://subread.sourceforge.net/ ======================//
+```
+
+
+
+
+### Download already prepared count data
+
+All the above steps is often necessary in projects where one generates sequence data, but just as for the qc steps many sequencing facilities have started delivering data as count data directly (at least if one works with model species) and as mentioned earlier many public repositories have data in the form of count data.
+
+Here we will download data from an experiment have looked at gene expression in muscle tissues in humans and we will use this data to see if there are any differences between gender in muscle gene expression.
+
+```{r}
+library(recount)
+download_study("SRP043368", type = "rse-gene")
+load(file.path("SRP043368", "rse_gene.Rdata"))
+rse_gene
+## class: RangedSummarizedExperiment 
+## dim: 58037 26 
+## metadata(0):
+## assays(1): counts
+## rownames(58037): ENSG00000000003.14 ENSG00000000005.5 ...
+##   ENSG00000283698.1 ENSG00000283699.1
+## rowData names(3): gene_id bp_length symbol
+## colnames(26): SRR1424731 SRR1424732 ... SRR1424755 SRR1424756
+## colData names(21): project sample ... title characteristics
+```
+
+
+This **rse_gene** is another _RangedSummarizedExperiments_ objects and have on top of expression data, sample information etc. To fetch the sample information about an object the function `colData` can be used.
+
+#### Preparing the data for analysis
+
+```{r}
+colData(rse_gene)
+## DataFrame with 26 rows and 21 columns
+##                project      sample  experiment         run
+##            <character> <character> <character> <character>
+## SRR1424731   SRP043368   SRS641338   SRX610324  SRR1424731
+## SRR1424732   SRP043368   SRS641339   SRX610325  SRR1424732
+## SRR1424733   SRP043368   SRS641340   SRX610326  SRR1424733
+## SRR1424735   SRP043368   SRS641341   SRX610328  SRR1424735
+## SRR1424734   SRP043368   SRS641342   SRX610327  SRR1424734
+## ...                ...         ...         ...         ...
+## SRR1424752   SRP043368   SRS641358   SRX610344  SRR1424752
+## SRR1424753   SRP043368   SRS641359   SRX610345  SRR1424753
+## SRR1424754   SRP043368   SRS641360   SRX610346  SRR1424754
+## SRR1424755   SRP043368   SRS641361   SRX610347  SRR1424755
+## SRR1424756   SRP043368   SRS641361   SRX610347  SRR1424756
+##            read_count_as_reported_by_sra reads_downloaded
+##                                <integer>        <integer>
+## SRR1424731                      29955322         29955322
+## SRR1424732                      31892332         31892332
+## SRR1424733                      50479438         50479438
+## SRR1424735                      59930974         59930974
+## SRR1424734                      38127460         38127460
+## ...                                  ...              ...
+## SRR1424752                      56690642         56690642
+## SRR1424753                      53806682         53806682
+## SRR1424754                      62344990         62344990
+## SRR1424755                      17913512         17913512
+## SRR1424756                      13938278         13938278
+##            proportion_of_reads_reported_by_sra_downloaded paired_end
+##                                                 <numeric>  <logical>
+## SRR1424731                                              1       TRUE
+## SRR1424732                                              1       TRUE
+## SRR1424733                                              1       TRUE
+## SRR1424735                                              1       TRUE
+## SRR1424734                                              1       TRUE
+## ...                                                   ...        ...
+## SRR1424752                                              1       TRUE
+## SRR1424753                                              1       TRUE
+## SRR1424754                                              1       TRUE
+## SRR1424755                                              1       TRUE
+## SRR1424756                                              1       TRUE
+##            sra_misreported_paired_end mapped_read_count        auc
+##                             <logical>         <integer>  <numeric>
+## SRR1424731                      FALSE          29582886 2700597015
+## SRR1424732                      FALSE          31083419 2802567487
+## SRR1424733                      FALSE          50232620 4720081400
+## SRR1424735                      FALSE          59260728 5554985728
+## SRR1424734                      FALSE          37382762 3384497431
+## ...                               ...               ...        ...
+## SRR1424752                      FALSE          47212788 3413173255
+## SRR1424753                      FALSE          52082887 4798991823
+## SRR1424754                      FALSE          60944552 5617825794
+## SRR1424755                      FALSE          17318697 1588459316
+## SRR1424756                      FALSE          13606853 1185130227
+##            sharq_beta_tissue sharq_beta_cell_type
+##                  <character>          <character>
+## SRR1424731            muscle             skeletal
+## SRR1424732            muscle             skeletal
+## SRR1424733            muscle             skeletal
+## SRR1424735            muscle             skeletal
+## SRR1424734            muscle             skeletal
+## ...                      ...                  ...
+## SRR1424752            muscle             skeletal
+## SRR1424753            muscle             skeletal
+## SRR1424754            muscle             skeletal
+## SRR1424755            muscle             skeletal
+## SRR1424756            muscle             skeletal
+##            biosample_submission_date biosample_publication_date
+##                          <character>                <character>
+## SRR1424731   2014-06-18T09:46:51.917    2014-07-16T01:09:43.077
+## SRR1424732   2014-06-18T09:46:31.127    2014-07-16T01:09:48.273
+## SRR1424733   2014-06-18T09:46:33.907    2014-07-16T01:09:54.377
+## SRR1424735   2014-06-18T09:46:28.123    2014-07-16T01:10:05.983
+## SRR1424734   2014-06-18T09:46:55.210    2014-07-16T01:10:00.340
+## ...                              ...                        ...
+## SRR1424752   2014-06-18T09:47:35.353    2014-07-16T01:23:32.167
+## SRR1424753   2014-06-18T09:47:17.927    2014-07-16T01:23:48.860
+## SRR1424754   2014-06-18T09:47:38.047    2014-07-16T01:24:02.310
+## SRR1424755   2014-06-18T09:47:24.060    2014-07-16T01:08:32.747
+## SRR1424756   2014-06-18T09:47:24.060    2014-07-16T01:08:32.747
+##              biosample_update_date avg_read_length geo_accession
+##                        <character>       <integer>   <character>
+## SRR1424731 2014-08-20T01:14:31.823             202    GSM1415126
+## SRR1424732 2014-08-20T01:14:32.233             202    GSM1415127
+## SRR1424733 2014-08-20T01:14:32.627             202    GSM1415128
+## SRR1424735 2014-08-20T01:14:32.967             202    GSM1415130
+## SRR1424734 2014-08-20T01:14:33.307             202    GSM1415129
+## ...                            ...             ...           ...
+## SRR1424752 2014-08-20T01:09:20.720             202    GSM1415146
+## SRR1424753 2014-08-20T01:09:21.357             202    GSM1415147
+## SRR1424754 2014-08-20T01:09:21.800             202    GSM1415148
+## SRR1424755 2014-08-20T01:09:22.357             202    GSM1415149
+## SRR1424756 2014-08-20T01:09:22.357             202    GSM1415149
+##              bigwig_file       title
+##              <character> <character>
+## SRR1424731 SRR1424731.bw         217
+## SRR1424732 SRR1424732.bw         225
+## SRR1424733 SRR1424733.bw         174
+## SRR1424735 SRR1424735.bw         135
+## SRR1424734 SRR1424734.bw         235
+## ...                  ...         ...
+## SRR1424752 SRR1424752.bw         172
+## SRR1424753 SRR1424753.bw         234
+## SRR1424754 SRR1424754.bw         152
+## SRR1424755 SRR1424755.bw         224
+## SRR1424756 SRR1424756.bw         224
+##                                                                  characteristics
+##                                                                  <CharacterList>
+## SRR1424731 tissue: skeletal muscle,gender: female,exercise status: untrained,...
+## SRR1424732 tissue: skeletal muscle,gender: female,exercise status: untrained,...
+## SRR1424733   tissue: skeletal muscle,gender: male,exercise status: untrained,...
+## SRR1424735   tissue: skeletal muscle,gender: male,exercise status: untrained,...
+## SRR1424734   tissue: skeletal muscle,gender: male,exercise status: untrained,...
+## ...                                                                          ...
+## SRR1424752   tissue: skeletal muscle,gender: male,exercise status: untrained,...
+## SRR1424753   tissue: skeletal muscle,gender: male,exercise status: untrained,...
+## SRR1424754 tissue: skeletal muscle,gender: female,exercise status: untrained,...
+## SRR1424755 tissue: skeletal muscle,gender: female,exercise status: untrained,...
+## SRR1424756 tissue: skeletal muscle,gender: female,exercise status: untrained,...
+```
+
+
+Information about the experimental condition of the samples can in this experiment be found in the last column (named characteristics) of the S4Vectors DataFrame object. From this list we can extract needed (eg. information about conditions that we need to be able to compare samples for differential gene expression) sample information using the `sapply` function.
+
+```{r}
+sampleInfo <- sapply(colData(rse_gene)$characteristics, "[", c(2,4))
+```
+
+
+Note that we get a matrix back where the first row contain the gender information and the second contains information on which leg is sampled. By some simple commands we can convert this to vectors of factors that can be used to set up the linear model in the analysis of differential gene expression.
+
+```{r}
+# sampleInfo <- factor(as.vector(sampleInfo))
+gender <- unlist(strsplit(sampleInfo[1,], split = ": "))[c(FALSE, TRUE)]
+part <- unlist(strsplit(sampleInfo[2,], split = ": "))[c(FALSE, TRUE)]
+gender <- factor(gender)
+part <- factor(make.names(part))
+```
+
+
+
+We can now add this information to the _RangedSummarizedExperiments_ object so that we have all necessary data associated with the experiment in the same object. We also rescale the expession data from recount object to make sure it is useful for gene expression analysis at gene level.
+
+
+```{r}
+colData(rse_gene)$gender <- gender
+colData(rse_gene)$part <- part
+rse_gene_scaled <- scale_counts(rse_gene)
+
+counts <- assays(rse_gene_scaled)$counts
+filter <- rowMeans(counts) >= 10
+```
+
+
+Why is the rescaling done?
+
+
+We can now use the counts and the filter objects to create the input objects for the different differential expression packages.
+
+### Using count data for detection of differential gene expression
+
+Once we have the count data as well as the sample information we are ready to start looking at the data and see if it is suitable for detection of differential gene expression. One approach to looking a mulitdimensional scaling plot of the expression data. We can make this easy by creating DGEList object from the count data and at the same time we filter away the lowly expressed genes.
+
+```{r}
+library(limma)
+library(edgeR)
+
+## Build DGEList object
+dge <- DGEList(counts = counts[filter, ])
+dge$samples$part <- colData(rse_gene)$part
+dge$samples$gender <- colData(rse_gene)$gender
+
+
+## Calculate normalization factors
+dge <- calcNormFactors(dge)
+
+## Explore the data
+mds_dge <- plotMDS(dge, labels = dge$samples$gender)
+mds_dge
+## An object of class MDS
+## $dim.plot
+## [1] 1 2
+## 
+## $distance.matrix
+##            SRR1424731 SRR1424732 SRR1424733 SRR1424735 SRR1424734
+## SRR1424731   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424732   1.941252   0.000000   0.000000   0.000000   0.000000
+## SRR1424733   2.913043   2.985004   0.000000   0.000000   0.000000
+## SRR1424735   2.624934   2.659279   2.365125   0.000000   0.000000
+## SRR1424734   3.113740   2.943969   2.238578   2.624835   0.000000
+## SRR1424736   2.732637   2.632620   2.638724   1.644055   2.454885
+## SRR1424737   2.277510   2.439158   2.881196   2.635754   3.012591
+## SRR1424738   2.553771   2.723123   2.864823   2.824051   2.972799
+## SRR1424739   2.866688   2.925275   3.095794   3.153746   3.010647
+## SRR1424740   2.957268   3.074815   3.400867   3.310451   3.380212
+## SRR1424741   2.338189   2.381634   2.958411   2.792411   3.058960
+## SRR1424743   2.880381   2.914090   2.698386   2.487590   2.765514
+## SRR1424742   2.257283   2.274060   3.003608   2.693639   3.035112
+## SRR1424745   2.514156   2.420281   3.032855   2.813392   2.997422
+## SRR1424744   2.679335   2.711349   2.614159   2.348709   2.541390
+## SRR1424746   2.420721   2.416697   2.976237   2.765331   3.010653
+## SRR1424747   2.662725   2.840393   2.556699   2.346020   2.815195
+## SRR1424748   2.902777   2.905380   2.601807   2.395052   2.566702
+## SRR1424749   2.830689   2.939961   2.494461   2.335425   2.995351
+## SRR1424750   3.679214   3.428615   3.420395   3.230273   2.852106
+## SRR1424751   3.259793   3.181545   3.189494   2.974329   3.188738
+## SRR1424752   3.447699   3.374207   3.189330   3.089881   3.304405
+## SRR1424753   2.807405   2.813842   2.531776   2.229673   2.543604
+## SRR1424754   2.297362   2.447545   2.969054   2.708500   3.024928
+## SRR1424755   3.337956   3.256374   3.670652   3.469206   3.353915
+## SRR1424756   3.676295   3.505616   4.036806   3.801478   3.593957
+##            SRR1424736 SRR1424737 SRR1424738 SRR1424739 SRR1424740
+## SRR1424731   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424732   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424733   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424735   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424734   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424736   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424737   2.791465   0.000000   0.000000   0.000000   0.000000
+## SRR1424738   3.045210   1.913510   0.000000   0.000000   0.000000
+## SRR1424739   3.257656   2.756787   2.684849   0.000000   0.000000
+## SRR1424740   3.431511   2.959388   2.937819   2.551628   0.000000
+## SRR1424741   2.916611   2.510374   2.589959   2.541173   2.991222
+## SRR1424743   2.572355   2.966069   3.025040   2.645880   3.287979
+## SRR1424742   2.781739   2.366964   2.549674   2.844989   2.967407
+## SRR1424745   2.875448   2.495081   2.583962   2.763172   3.063072
+## SRR1424744   2.322777   2.811550   2.902789   2.807019   3.235352
+## SRR1424746   2.879881   2.319807   2.509437   2.831611   3.080792
+## SRR1424747   2.644141   2.679378   2.669967   3.013245   3.229745
+## SRR1424748   2.557856   2.772671   2.769687   2.895290   3.277873
+## SRR1424749   2.912192   2.719746   2.832301   3.141068   3.332009
+## SRR1424750   3.162700   3.481659   3.343108   3.280033   3.474215
+## SRR1424751   3.012922   3.368427   3.195016   3.591968   3.614243
+## SRR1424752   3.283400   3.607501   3.295497   3.734907   3.717094
+## SRR1424753   2.310910   2.795657   2.767642   3.013341   3.387436
+## SRR1424754   2.757446   2.396603   2.589911   2.774184   3.106018
+## SRR1424755   3.338508   3.372383   3.251779   3.299293   3.752113
+## SRR1424756   3.662914   3.749548   3.583482   3.542769   4.017547
+##            SRR1424741 SRR1424743 SRR1424742 SRR1424745 SRR1424744
+## SRR1424731   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424732   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424733   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424735   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424734   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424736   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424737   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424738   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424739   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424740   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424741   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424743   2.704385   0.000000   0.000000   0.000000   0.000000
+## SRR1424742   1.867197   2.877233   0.000000   0.000000   0.000000
+## SRR1424745   2.472442   2.664769   2.514834   0.000000   0.000000
+## SRR1424744   2.713624   1.924945   2.717663   2.669511   0.000000
+## SRR1424746   2.454477   2.877661   2.352546   1.939317   2.753314
+## SRR1424747   2.797805   2.576052   2.825055   2.595069   2.361877
+## SRR1424748   2.814765   2.550164   2.818845   2.706989   2.316595
+## SRR1424749   2.924799   2.699697   2.820859   2.937314   2.648138
+## SRR1424750   3.499868   3.305338   3.495447   3.391634   3.084426
+## SRR1424751   3.362800   3.044554   3.285736   3.117394   2.966153
+## SRR1424752   3.476718   3.318872   3.298303   3.346625   3.318082
+## SRR1424753   2.880337   2.529373   2.901272   2.876891   2.334023
+## SRR1424754   2.366918   2.963957   2.325255   2.581179   2.712466
+## SRR1424755   3.183014   3.551871   3.236833   3.329505   3.213084
+## SRR1424756   3.443283   3.762080   3.479199   3.613716   3.541258
+##            SRR1424746 SRR1424747 SRR1424748 SRR1424749 SRR1424750
+## SRR1424731   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424732   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424733   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424735   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424734   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424736   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424737   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424738   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424739   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424740   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424741   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424743   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424742   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424745   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424744   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424746   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424747   2.651030   0.000000   0.000000   0.000000   0.000000
+## SRR1424748   2.696589   2.019616   0.000000   0.000000   0.000000
+## SRR1424749   2.809934   2.384271   2.609429   0.000000   0.000000
+## SRR1424750   3.326963   3.202270   2.948938   3.296192   0.000000
+## SRR1424751   3.308748   2.841631   2.929515   3.200906   3.650256
+## SRR1424752   3.500674   3.058141   3.216041   3.318619   3.694663
+## SRR1424753   2.960244   2.452244   2.402087   2.659246   3.253398
+## SRR1424754   2.427459   2.632450   2.701931   2.892835   3.511173
+## SRR1424755   3.191356   3.394975   3.186860   3.683545   3.525029
+## SRR1424756   3.560716   3.793858   3.519415   4.048509   3.734634
+##            SRR1424751 SRR1424752 SRR1424753 SRR1424754 SRR1424755
+## SRR1424731   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424732   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424733   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424735   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424734   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424736   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424737   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424738   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424739   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424740   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424741   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424743   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424742   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424745   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424744   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424746   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424747   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424748   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424749   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424750   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424751   0.000000   0.000000   0.000000   0.000000   0.000000
+## SRR1424752   2.507752   0.000000   0.000000   0.000000   0.000000
+## SRR1424753   2.408779   3.019551   0.000000   0.000000   0.000000
+## SRR1424754   3.260575   3.607652   2.761083   0.000000   0.000000
+## SRR1424755   3.791126   4.078964   3.320815   2.615970   0.000000
+## SRR1424756   4.047742   4.263161   3.663125   3.104936   2.882369
+##            SRR1424756
+## SRR1424731          0
+## SRR1424732          0
+## SRR1424733          0
+## SRR1424735          0
+## SRR1424734          0
+## SRR1424736          0
+## SRR1424737          0
+## SRR1424738          0
+## SRR1424739          0
+## SRR1424740          0
+## SRR1424741          0
+## SRR1424743          0
+## SRR1424742          0
+## SRR1424745          0
+## SRR1424744          0
+## SRR1424746          0
+## SRR1424747          0
+## SRR1424748          0
+## SRR1424749          0
+## SRR1424750          0
+## SRR1424751          0
+## SRR1424752          0
+## SRR1424753          0
+## SRR1424754          0
+## SRR1424755          0
+## SRR1424756          0
+## 
+## $cmdscale.out
+##                  [,1]        [,2]
+## SRR1424731  0.5321335 -0.94890912
+## SRR1424732  0.5212686 -0.57139882
+## SRR1424733 -0.9628817 -0.11926046
+## SRR1424735 -0.8435066 -0.07676157
+## SRR1424734 -0.6165875  0.74782283
+## SRR1424736 -0.6662061  0.32720984
+## SRR1424737  0.5310910 -0.92659899
+## SRR1424738  0.4353560 -0.54644495
+## SRR1424739  0.7551794 -0.18027514
+## SRR1424740  0.6061982 -0.69564591
+## SRR1424741  0.7769242 -0.59248721
+## SRR1424743 -0.5784541  0.03307152
+## SRR1424742  0.6654108 -0.68465613
+## SRR1424745  0.3986779 -0.57741353
+## SRR1424744 -0.4567155  0.29814734
+## SRR1424746  0.6261846 -0.59446887
+## SRR1424747 -0.6457259 -0.11949621
+## SRR1424748 -0.4960632  0.43375250
+## SRR1424749 -0.7030065 -0.45133664
+## SRR1424750 -0.2409997  1.28352273
+## SRR1424751 -1.2438475  0.23163919
+## SRR1424752 -1.4043080  0.05831351
+## SRR1424753 -0.8669693  0.32083729
+## SRR1424754  0.9191088 -0.04330591
+## SRR1424755  1.3489743  1.45720537
+## SRR1424756  1.6087643  1.93693735
+## 
+## $top
+## [1] 500
+## 
+## $gene.selection
+## [1] "pairwise"
+## 
+## $x
+## SRR1424731 SRR1424732 SRR1424733 SRR1424735 SRR1424734 SRR1424736 
+##  0.5321335  0.5212686 -0.9628817 -0.8435066 -0.6165875 -0.6662061 
+## SRR1424737 SRR1424738 SRR1424739 SRR1424740 SRR1424741 SRR1424743 
+##  0.5310910  0.4353560  0.7551794  0.6061982  0.7769242 -0.5784541 
+## SRR1424742 SRR1424745 SRR1424744 SRR1424746 SRR1424747 SRR1424748 
+##  0.6654108  0.3986779 -0.4567155  0.6261846 -0.6457259 -0.4960632 
+## SRR1424749 SRR1424750 SRR1424751 SRR1424752 SRR1424753 SRR1424754 
+## -0.7030065 -0.2409997 -1.2438475 -1.4043080 -0.8669693  0.9191088 
+## SRR1424755 SRR1424756 
+##  1.3489743  1.6087643 
+## 
+## $y
+##  SRR1424731  SRR1424732  SRR1424733  SRR1424735  SRR1424734  SRR1424736 
+## -0.94890912 -0.57139882 -0.11926046 -0.07676157  0.74782283  0.32720984 
+##  SRR1424737  SRR1424738  SRR1424739  SRR1424740  SRR1424741  SRR1424743 
+## -0.92659899 -0.54644495 -0.18027514 -0.69564591 -0.59248721  0.03307152 
+##  SRR1424742  SRR1424745  SRR1424744  SRR1424746  SRR1424747  SRR1424748 
+## -0.68465613 -0.57741353  0.29814734 -0.59446887 -0.11949621  0.43375250 
+##  SRR1424749  SRR1424750  SRR1424751  SRR1424752  SRR1424753  SRR1424754 
+## -0.45133664  1.28352273  0.23163919  0.05831351  0.32083729 -0.04330591 
+##  SRR1424755  SRR1424756 
+##  1.45720537  1.93693735 
+## 
+## $axislabel
+## [1] "Leading logFC dim"
+```
+
+
+
+
+Here we can see that there is clear separation of samples corresponding to gender. We can create the same plot and look at weather there is any clustering by sampled leg.
+
+```{r}
+plotMDS(dge, labels = dge$samples$part) 
+```
+
+
+
+
+A more elegant solution would be to take the values from the `plotMDS` function and instead do the actual plotting with ggplot and add both factors in one go.
+
+```{r}
+mdsDf <- data.frame(cbind(x = mds_dge$x, y = mds_dge$y))
+mdsDf$part <- dge$samples$part
+mdsDf$gender <- dge$samples$gender
+ggplot(mdsDf, aes(x, y, color = gender, shape = part)) + geom_point() + 
+  ggtitle("MDS plot for SRR1424755") +
+  xlab("Leading logFC, dim 1") + ylab("Leading logFC, dim 2")
+```
+
+
+
+
+A third option is to instead generate an interactive plot where one can see not only sample origin, but also other dimension than the first two.
+
+```{r}
+library(Glimma)
+glMDSPlot(dge, labels = dge$samples$part, groups = dge$samples$gender, launch=TRUE)
+```
+
+
+
+### Detection of differential expression using edgeR
+
+EdgeR is a popular approach for testing differential gene expression from RNA-seq data. To run an edgeR analysis one need two things: 
+
+1. a count matrix  
+
+1. a design matrix. 
+
+The `estimateDisp` estimates common, trended and genewise dispersion for the data. The plot shows the biological coefficient of variation that tells about the expected underlying variation among replicates.
+
+```{r}
+design <- model.matrix(~part + gender)
+y <- estimateDisp(dge, design, robust=TRUE)
+plotBCV(y)
+```
+
+
+
+
+We can now test for differential gene expression using the edgeR
+
+```{r}
+fit.edgeR <- glmFit(y, design, robust=TRUE)
+```
+
+
+
+### Detection of differential expression using limma
+
+The limma package works with the dge object we created above, but prior to running limma we need to convert counts with the function `voom`, that returns log cpm values as well as precision weights. With this step the data is ready for linear modelling in limma in a framework assuming that values are normally distributed.
+
+
+```{r}
+y.voom <- voom(dge, design, plot = TRUE)
+fitLimma <- lmFit(y.voom, design)
+fitLimma2 <- eBayes(fitLimma)
+summary(decideTests(fitLimma2))
+##        (Intercept) partright.leg gendermale
+## Down          3852             0        368
+## NotSig        1649         19371      18528
+## Up           13870             0        475
+```
+
+
+
+
+### Detection of differential expression using DESeq2
+
+A third option for identifying differentially expressed genes in to use the DESeq2 package.
+
+
+```{r}
+library("DESeq2")
+desD <- DESeqDataSet(rse_gene_scaled, design = ~ part + gender)
+keep <- rowSums(counts(desD)) >= 10
+desD <- desD[keep,]
+desD <- DESeq(desD)
+resD <- results(desD)
+```
+
+
+## Session Info
+
+This document has been created in RStudio using R Markdown and related packages.
+For R Markdown, see http://rmarkdown.rstudio.com
+For details about the OS, packages and versions, see detailed information below:
+
+```{r}
+sessionInfo()
+## R version 3.5.0 (2018-04-23)
+## Platform: x86_64-apple-darwin15.6.0 (64-bit)
+## Running under: macOS Sierra 10.12.6
+## 
+## Matrix products: default
+## BLAS: /Library/Frameworks/R.framework/Versions/3.5/Resources/lib/libRblas.0.dylib
+## LAPACK: /Library/Frameworks/R.framework/Versions/3.5/Resources/lib/libRlapack.dylib
+## 
+## locale:
+## [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+## 
+## attached base packages:
+## [1] stats4    parallel  stats     graphics  grDevices utils     datasets 
+## [8] methods   base     
+## 
+## other attached packages:
+##  [1] DESeq2_1.20.0               edgeR_3.22.2               
+##  [3] limma_3.36.1                recount_1.6.2              
+##  [5] Rsubread_1.30.3             EnsDb.Hsapiens.v86_2.99.0  
+##  [7] ensembldb_2.4.1             AnnotationFilter_1.4.0     
+##  [9] GenomicFeatures_1.32.0      AnnotationDbi_1.42.1       
+## [11] ShortRead_1.38.0            GenomicAlignments_1.16.0   
+## [13] SummarizedExperiment_1.10.1 DelayedArray_0.6.0         
+## [15] matrixStats_0.53.1          Biobase_2.40.0             
+## [17] Rsamtools_1.32.0            GenomicRanges_1.32.3       
+## [19] GenomeInfoDb_1.16.0         Biostrings_2.48.0          
+## [21] XVector_0.20.0              IRanges_2.14.10            
+## [23] S4Vectors_0.18.3            BiocParallel_1.14.1        
+## [25] BiocGenerics_0.26.0         crosstalk_1.0.0            
+## [27] leaflet_2.0.1               networkD3_0.4              
+## [29] dygraphs_1.1.1.4            ggiraph_0.4.3              
+## [31] plotly_4.7.1                forcats_0.3.0              
+## [33] stringr_1.3.1               dplyr_0.7.5                
+## [35] purrr_0.2.5                 readr_1.1.1                
+## [37] tidyr_0.8.1                 tibble_1.4.2               
+## [39] ggplot2_2.2.1.9000          tidyverse_1.2.1            
+## [41] captioner_2.2.3             bookdown_0.7               
+## [43] knitr_1.20                 
+## 
+## loaded via a namespace (and not attached):
+##   [1] readxl_1.1.0             uuid_0.1-2              
+##   [3] backports_1.1.2          Hmisc_4.1-1             
+##   [5] plyr_1.8.4               igraph_1.2.1            
+##   [7] lazyeval_0.2.1           splines_3.5.0           
+##   [9] digest_0.6.15            foreach_1.4.4           
+##  [11] htmltools_0.3.6          checkmate_1.8.5         
+##  [13] magrittr_1.5             memoise_1.1.0           
+##  [15] BSgenome_1.48.0          cluster_2.0.7-1         
+##  [17] annotate_1.58.0          modelr_0.1.2            
+##  [19] R.utils_2.6.0            officer_0.3.0           
+##  [21] prettyunits_1.0.2        colorspace_1.3-2        
+##  [23] blob_1.1.1               rvest_0.3.2             
+##  [25] haven_1.1.1              xfun_0.1                
+##  [27] crayon_1.3.4             RCurl_1.95-4.10         
+##  [29] jsonlite_1.5             genefilter_1.62.0       
+##  [31] bindr_0.1.1              GEOquery_2.48.0         
+##  [33] iterators_1.0.9          survival_2.42-3         
+##  [35] VariantAnnotation_1.26.0 zoo_1.8-2               
+##  [37] glue_1.2.0               registry_0.5            
+##  [39] rvg_0.1.9                gtable_0.2.0            
+##  [41] zlibbioc_1.26.0          rentrez_1.2.1           
+##  [43] scales_0.5.0             rngtools_1.3.1          
+##  [45] DBI_1.0.0                bibtex_0.4.2            
+##  [47] derfinderHelper_1.14.0   derfinder_1.14.0        
+##  [49] Rcpp_0.12.17             htmlTable_1.12          
+##  [51] viridisLite_0.3.0        xtable_1.8-2            
+##  [53] progress_1.2.0           bumphunter_1.22.0       
+##  [55] foreign_0.8-70           bit_1.1-14              
+##  [57] Formula_1.2-3            htmlwidgets_1.2         
+##  [59] httr_1.3.1               RColorBrewer_1.1-2      
+##  [61] acepack_1.4.1            pkgconfig_2.0.1         
+##  [63] XML_3.98-1.11            R.methodsS3_1.7.1       
+##  [65] nnet_7.3-12              locfit_1.5-9.1          
+##  [67] labeling_0.3             tidyselect_0.2.4        
+##  [69] rlang_0.2.1              reshape2_1.4.3          
+##  [71] later_0.7.3              munsell_0.5.0           
+##  [73] cellranger_1.1.0         tools_3.5.0             
+##  [75] downloader_0.4           cli_1.0.0               
+##  [77] RSQLite_2.1.1            broom_0.4.4             
+##  [79] evaluate_0.10.1          yaml_2.1.19             
+##  [81] bit64_0.9-7              zip_1.0.0               
+##  [83] bindrcpp_0.2.2           doRNG_1.6.6             
+##  [85] nlme_3.1-137             mime_0.5                
+##  [87] R.oo_1.22.0              xml2_1.2.0              
+##  [89] biomaRt_2.36.1           compiler_3.5.0          
+##  [91] rstudioapi_0.7           curl_3.2                
+##  [93] geneplotter_1.58.0       statmod_1.4.30          
+##  [95] stringi_1.2.3            GenomicFiles_1.16.0     
+##  [97] gdtools_0.1.7            lattice_0.20-35         
+##  [99] ProtGenerics_1.12.0      Matrix_1.2-14           
+## [101] psych_1.8.4              pillar_1.2.3            
+## [103] data.table_1.11.4        bitops_1.0-6            
+## [105] qvalue_2.12.0            httpuv_1.4.3            
+## [107] rtracklayer_1.40.3       R6_2.2.2                
+## [109] latticeExtra_0.6-28      hwriter_1.3.2           
+## [111] promises_1.0.1           gridExtra_2.3           
+## [113] codetools_0.2-15         assertthat_0.2.0        
+## [115] pkgmaker_0.27            rprojroot_1.3-2         
+## [117] withr_2.1.2              mnormt_1.5-5            
+## [119] GenomeInfoDbData_1.1.0   hms_0.4.2               
+## [121] rpart_4.1-13             grid_3.5.0              
+## [123] rmarkdown_1.10           Cairo_1.5-9             
+## [125] shiny_1.1.0              lubridate_1.7.4         
+## [127] base64enc_0.1-3
+```
+
+
+Page built on: 16-Jun-2018 at 09:29:57.
+
+2018 | SciLifeLab > NBIS > RaukR website  twitter

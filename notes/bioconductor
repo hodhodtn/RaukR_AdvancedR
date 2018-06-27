@@ -1,0 +1,17 @@
+alias name
+	alias name='R_LIBS_USER=${R_LIBS_USER}:/path/to/R/x86_64/3.5-Bioc-3.8 '
+
+
+
+RSTUDIO_WHICH_R
+
+
+unlist 	# cheap
+width 	# just called once (mcols used to add columns)
+relist 	# cheap
+
+
+decorated matrix with coldata ro rowdata
+
+
+hemberg lab and bioconductor singlecellworkflow

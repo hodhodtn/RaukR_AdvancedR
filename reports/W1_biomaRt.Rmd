@@ -1,0 +1,508 @@
+---
+title: "W1 biomaRt"
+author: "Diana and Jakub"
+date: "15-Jun-2018"
+output: 
+  html_document:
+    number_sections: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+
+
+
+# An interface to annotation databases
+
+
+
+The biomaRt package provides an interface to databases implementing the BioMart software suite, e.g. Ensembl and Uniprot. The package enables retrieval of large amounts of data in a uniform way without the need to know the underlying database schemas. The Ensembl database holds a lot of data on genome sequences and annotations. Take a look at <http://www.ensembl.org/biomart/martview/> to get an idea of what can be downloaded from Ensembl.
+
+## biomaRt in summary
+
+Working with biomaRt typically consists of these 3 steps:
+
+1. Choose a database (useMart)
+
+1. Choose a dataset (useDataset)
+
+1. Query datasets (getBM)
+
+First, make sure that the biomaRt package is installed and loaded. In the code examples below, you will also need the dplyr package.
+
+
+```{r}
+source("https://bioconductor.org/biocLite.R")
+biocLite("biomaRt")
+library(biomaRt)
+library(tidyverse)
+```
+
+
+### Databases
+
+List available databases and choose the mart corresponding to “Ensembl Genes 92”.
+
+```{r}
+listMarts()
+ensembl = useMart("ENSEMBL_MART_ENSEMBL")
+```
+
+
+### Datasets
+
+List available datasets. In Ensembl each species is a separate dataset. Let’s start by looking at the human genes.
+
+
+```{r}
+listDatasets(ensembl)
+ensembl_mart = useDataset("hsapiens_gene_ensembl",mart=ensembl)
+
+##  dataset
+##  <S3: AsIs>
+##  odegus_gene_ensembl	
+##  gaculeatus_gene_ensembl	
+##  pabelii_gene_ensembl	
+##  cjacchus_gene_ensembl	
+##  csabaeus_gene_ensembl	
+##  neugenii_gene_ensembl	
+##  panubis_gene_ensembl	
+##  oanatinus_gene_ensembl	
+##  loculatus_gene_ensembl	
+##  mcaroli_gene_ensembl	
+##  ...
+##  1-10 of 98 rows | 1-1 of 3 columns
+```
+
+
+### Query function
+
+`getBM()` is the main function for querying datasets. These queries consist of _attributes_, _filters_ and _filter values_.
+
+* filters: These are used to restrict your query (e.g. chromosomal location or gene ids). You can provide as many or as few filters as you want.
+
+* values: These are the filter values you want retrieved (e.g. chromosme 11). You should provide as many values as filters.
+
+* attributes: What information do you want to retrieve (e.g. chromosome, gene name, description)?
+
+
+#### Attributes
+
+Use `listAttributes()` to view all available attributes
+
+```{r}
+attributes = listAttributes(ensembl_mart)
+head(attributes)
+ 
+ 
+##  name                            description                   page
+##  <chr>                           <chr>                         <chr>
+##  1	ensembl_gene_id	              Gene stable ID	              feature_page
+##  2	ensembl_gene_id_version	      Gene stable ID version	      feature_page
+##  3	ensembl_transcript_id	        Transcript stable ID	        feature_page
+##  4	ensembl_transcript_id_version	Transcript stable ID version	feature_page
+##  5	ensembl_peptide_id	          Protein stable ID	            feature_page
+##  6	ensembl_peptide_id_version	  Protein stable ID version	    feature_page
+##  6 rows
+```
+
+
+#### Filters
+
+Use `listFilters()` to view all filter options
+
+```{r}
+filters = listFilters(ensembl_mart)
+head(filters)
+
+##  name                description
+##  <chr>               <chr>
+##  1	chromosome_name	  Chromosome/scaffold name
+##  2	start	            Start
+##  3	end	              End
+##  4	band_start	      Band Start
+##  5	band_end	        Band End
+##  6	marker_start	    Marker Start
+##  6 rows
+```
+
+
+ 
+ 
+You can see that there are a lot of attributes to fetch and a lot of options for filtering. If you feel lost among these, it might help to use grep() to search for the ones that are useful for you. For example, if you are intrested in the fruitfly (Drosophila melanogaster) homologs of the human genes, you can look for all attributes with “melanogaster” in the name:
+
+```{r}
+grep("melanogaster", attributes$name, value=TRUE)
+##  [1] "dmelanogaster_homolog_ensembl_gene"                
+##  [2] "dmelanogaster_homolog_associated_gene_name"        
+##  [3] "dmelanogaster_homolog_ensembl_peptide"             
+##  [4] "dmelanogaster_homolog_chromosome"                  
+##  [5] "dmelanogaster_homolog_chrom_start"                 
+##  [6] "dmelanogaster_homolog_chrom_end"                   
+##  [7] "dmelanogaster_homolog_canonical_transcript_protein"
+##  [8] "dmelanogaster_homolog_subtype"                     
+##  [9] "dmelanogaster_homolog_orthology_type"              
+## [10] "dmelanogaster_homolog_perc_id"                     
+## [11] "dmelanogaster_homolog_perc_id_r1"                  
+## [12] "dmelanogaster_homolog_goc_score"                   
+## [13] "dmelanogaster_homolog_wga_coverage"                
+## [14] "dmelanogaster_homolog_dn"                          
+## [15] "dmelanogaster_homolog_ds"                          
+## [16] "dmelanogaster_homolog_orthology_confidence"
+```
+
+
+#### Filter options
+
+Some filters have a limited set of values. For example, boolean filters take TRUE or FALSE. For other filters the function `filterOptions()` can be used to get all possible values.
+
+Find all valid options for the filter ‘biotype’.
+
+```{r}
+filterOptions('biotype',ensembl_mart)
+## [1] "[3prime_overlapping_ncRNA,antisense,bidirectional_promoter_lncRNA,IG_C_gene,IG_C_pseudogene,IG_D_gene,IG_J_gene,IG_J_pseudogene,IG_pseudogene,IG_V_gene,IG_V_pseudogene,lincRNA,macro_lncRNA,miRNA,misc_RNA,Mt_rRNA,Mt_tRNA,non_coding,polymorphic_pseudogene,processed_pseudogene,processed_transcript,protein_coding,pseudogene,ribozyme,rRNA,scaRNA,scRNA,sense_intronic,sense_overlapping,snoRNA,snRNA,sRNA,TEC,transcribed_processed_pseudogene,transcribed_unitary_pseudogene,transcribed_unprocessed_pseudogene,translated_processed_pseudogene,TR_C_gene,TR_D_gene,TR_J_gene,TR_J_pseudogene,TR_V_gene,TR_V_pseudogene,unitary_pseudogene,unprocessed_pseudogene,vaultRNA]"
+```
+
+
+## Building queries
+
+Now we can put all this together to build queries using the function 
+```{r}
+# getBM(attributes = “”, filters = “”, values = “”, mart,…)
+```
+
+
+
+#### Gene annotation
+
+Let’s first try to find the chromosomal position of the gene SRC.
+
+
+```{r}
+getBM(attributes = c("chromosome_name", "start_position", "end_position"), filters = c("hgnc_symbol"), values = c("SRC"), mart = ensembl_mart)
+##  chromosome_name     start_position        end_position
+##  <int>               <int>                 <int>
+##  20	                37344685	            37406050
+##  1 row
+
+# You may also use getBM() to annotate all genes in a list with for example gene name, location and description.
+q_genes <- c("ENSG00000197122", "ENSG00000182866")
+gene_annot <- getBM(attributes = c("ensembl_gene_id","hgnc_symbol","chromosome_name","band","strand","start_position","end_position","description", "gene_biotype"), filters = "ensembl_gene_id", values = q_genes, mart = ensembl_mart)
+gene_annot
+##  ensembl_gene_id     hgnc_symbol       chromosome_name       band        strand      start_position
+##  <chr>               <chr>             <int>                 <chr>       <int>       <int>
+##  ENSG00000182866	    LCK	              1	                    p35.2	      1	          32251239	
+##  ENSG00000197122	    SRC	              20	                  q11.23	    1 	        37344685	
+##  2 rows | 1-6 of 9 columns
+```
+
+
+#### Gene ontology annotations
+
+Next, we want to find all genes with the Gene Ontology (GO) annotation TOR complex (GO:0038201). First, we search for filters related to “go”:
+
+```{r}
+grep("go", filters$name, value=TRUE)
+## [1] "with_go"               "with_goslim_goa"       "go"                   
+## [4] "goslim_goa"            "go_parent_term"        "go_parent_name"       
+## [7] "go_evidence_code"      "with_ggorilla_homolog"
+```
+
+
+Let’s try to use the filter “go”:
+
+```{r}
+tor_table <- getBM(attributes = c("ensembl_gene_id","hgnc_symbol", "go_id"), filters = "go", values = "GO:0038201", mart = ensembl_mart) 
+tor_table
+##  0 rows
+```
+
+
+How many genes were found? Note that the “go” filter will only give the genes annoatated to exactly this Gene Ontology term. If we want to find all genes annotated to the given term or any of the child terms, we instead use “go_parent_term”. This query takes a bit longer to run.
+
+```{r}
+tor_table2 <- getBM(attributes = c("ensembl_gene_id","hgnc_symbol", "go_id"), filters = "go_parent_term", values = "GO:0038201", mart = ensembl_mart) 
+tor_table2
+##  ensembl_gene_id       hgnc_symbol       go_id
+##  <chr>                 <chr>             <chr>
+##  ENSG00000149212	      SESN3	            GO:0031932
+##  ENSG00000164327	      RICTOR	          GO:0031932
+##  ENSG00000198242	      RPL23A	          GO:0031932
+##  ENSG00000141564	      RPTOR	            GO:0031931
+##  ENSG00000119487	      MAPKAP1	          GO:0031932
+##  ENSG00000101407	      TTI1	            GO:0031931
+##  ENSG00000101407	      TTI1          	  GO:0031932
+##  ENSG00000135362	      PRR5L	            GO:0031932
+##  ENSG00000198793	      MTOR	            GO:0031931
+##  ENSG00000198793	      MTOR	            GO:0031932
+##  1-10 of 19 rows
+```
+
+
+We can also try to retreive the GO terms (id + name) associated with the genes in our list. Let’s say that we are only interested in the GO domain “Biological Process” (see attribute namespace_1003).
+
+```{r}
+go_table <- getBM( attributes = c("external_gene_name", "go_id","name_1006", "namespace_1003"), filters = "ensembl_gene_id", values = q_genes, mart = ensembl_mart) %>% filter(namespace_1003 == "biological_process")
+go_table
+##  external_gene_name    go_id
+##  <chr>                 <chr>
+##  LCK	                  GO:0006468	
+##  LCK	                  GO:0016310	
+##  LCK	                  GO:0018108	
+##  LCK	                  GO:0006470	
+##  LCK	                  GO:0050900	
+##  LCK	                  GO:0045087	
+##  LCK	                  GO:0050853	
+##  LCK	                  GO:0046854	
+##  LCK	                  GO:0050862	
+##  LCK	                  GO:0050852	
+##  ...
+##  1-10 of 151 rows | 1-2 of 4 columns
+```
+
+
+### Multiple filters
+
+You can combine several filters in the same query. Note that the values should be a list of vectors. Search for all protein coding genes on chromosome Y that have an ortholog in fruit fly. It can be nice to sort the genes by start position.
+
+```{r}
+orth_table <- getBM( attributes = c("hgnc_symbol", "chromosome_name", "start_position", "end_position"), filters = c("chromosome_name", "biotype", "with_dmelanogaster_homolog"), values = list("Y", "protein_coding", TRUE), mart = ensembl_mart) %>% arrange(start_position)
+orth_table
+##  hgnc_symbol       chromosome_name         start_position        end_position
+##  <chr>             <chr>                   <int>                 <int>
+##  RPS4Y1	          Y	                      2841486	              2932000
+##  TGIF2LY	          Y	                      3579041	              3580041
+##  PCDH11Y	          Y	                      5000226	              5742224
+##  TSPY2	            Y	                      6246223	              6249019
+##  TBL1Y	            Y	                      6910686 	            7091683
+##  TSPY4	            Y 	                    9337464 	            9340284
+##  TSPY8	            Y	                      9357797	              9360599
+##  TSPY3	            Y	                      9398421	              9401223
+##  TSPY1	            Y	                      9466955 	            9469748
+##  TSPY10	          Y	                      9527880	              9530682
+##  1-10 of 30 rows
+```
+
+
+### Get sequences
+
+BiomaRt can also be used to access sequence data. To find the sequence options, look at the “sequences” page of `listAttributes()`.
+
+```{r}
+#pages = attributePages(ensembl_mart)
+listAttributes(ensembl_mart, page = "sequences")
+```
+
+
+#### Get sequences using getBM
+
+We will first use `getBM()` to retrieve the cDNA sequences of the genes in q_genes.
+
+```{r}
+seq <- getBM(attributes = c("ensembl_gene_id","cdna"), filters = "ensembl_gene_id", values = q_genes, mart = ensembl_mart)
+seq[,c("ensembl_gene_id", "cdna")]
+ensembl_gene_id
+```
+
+
+
+Note that you get several sequences per gene. These represent the different transcript isoforms. Add the transcript ids to the output to see this.
+
+
+
+#### The getSequence function
+
+It is also possible to use a wrapper function, `getSequence()`, to fetch the sequences.
+
+Try to get the same sequences using this function. Valid seqType arguments can be found in the help for getSequence. We can also order them according to gene id.
+
+```{r}
+seq <- getSequence(id = q_genes, type= "ensembl_gene_id", seqType = "cdna", mart = ensembl_mart) %>% arrange(ensembl_gene_id)
+seq[,c("ensembl_gene_id", "cdna")] 
+ensembl_gene_id
+```
+
+
+
+Next, we want the 100 bp upstream promoter sequences of the q_genes.
+
+```{r}
+seq <- getSequence(id = q_genes, type = "ensembl_gene_id", seqType = "coding_gene_flank", upstream = 100, mart = ensembl_mart)
+seq[,c("ensembl_gene_id", "coding_gene_flank")]
+ensembl_gene_id
+```
+
+
+This function can also be used with chromosome positions. As an example, get the peptide sequences of Ensembl genes in: chr1:32251239-32286165. Note that you have to use type even if you filter on position.
+
+```{r}
+seq <- getSequence(chromosome = gene_annot$chromosome_name[1], start = gene_annot$start_position[1], end = gene_annot$end_position[1], type = "ensembl_gene_id", seqType = "peptide", mart = ensembl_mart)
+seq[,c("ensembl_gene_id", "peptide")]
+ensembl_gene_id
+```
+
+
+
+If there is no sequence of this type it may be listed as “Sequence unavailable”.
+
+
+
+#### Export to fasta
+
+Sequences can be exported to file in fasta format by `exportFASTA()`. Export the sequences from the previous exercise. It may be wise to exclude entries with “Sequence unavailable”.
+
+```{r}
+exportFASTA(seq[seq$peptide != "Sequence unavailable",],"myFastaFile.fa")
+```
+
+
+
+Note that if the file already exists, this command will add new sequences to the existing ones.
+
+
+
+### A real example
+
+A typical use of the package is when you get a list of differentially expressed genes that you want to annotate. To try this out, load the file called DE_table. This file contains an example of what the output from a differential expression analysis (using EdgeR) can look like. You can also use your own data if you have any.
+
+```{r}
+de_tab <- read.table("data/DE_table.txt", sep="\t", header=TRUE, as.is=TRUE)
+head(de_tab)
+q_genes = de_tab$ensembl_gene_id
+gene_annot <- getBM(attributes = c("ensembl_gene_id","hgnc_symbol","chromosome_name","band","strand","start_position","end_position","description", "gene_biotype"), filters = "ensembl_gene_id", values = q_genes, mart = ensembl_mart)
+gene_annot
+
+
+```
+
+Annotate the genes in this list and merge the annotations with the original data. Try it out before looking at the code example!
+
+de_gene_annot <- getBM(attributes = c("ensembl_gene_id","hgnc_symbol","chromosome_name","strand","start_position","end_position","description", "gene_biotype"), filters = "ensembl_gene_id", values = de_tab$ensembl_gene_id, mart = ensembl_mart)
+merge(de_tab, de_gene_annot, by = "ensembl_gene_id")
+ensembl_gene_id
+<chr>
+logFC
+<dbl>
+logCPM
+<dbl>
+LR
+<dbl>
+PValue
+<dbl>
+FDR
+<dbl>
+hgnc_symbol
+<chr>
+ENSG00000052802	-1.709439	6.286770	148.9086	3.00e-34	4.22e-31	MSMO1	
+ENSG00000065675	1.880197	6.661642	180.6557	3.49e-41	9.79e-38	PRKCQ	
+ENSG00000081760	-3.269695	7.706618	174.9811	6.04e-40	1.06e-36	AACS	
+ENSG00000112902	-2.861294	6.085222	199.0109	3.43e-45	4.82e-41	SEMA5A	
+ENSG00000120437	-1.837139	8.271690	183.6269	7.83e-42	3.66e-38	ACAT2	
+ENSG00000137872	-1.935112	6.797159	178.4288	1.07e-40	2.50e-37	SEMA6D	
+ENSG00000139219	-2.167481	5.814819	193.0046	7.02e-44	4.93e-40	COL2A1	
+ENSG00000145147	-2.519037	4.944094	167.1440	3.11e-38	4.86e-35	SLIT2	
+ENSG00000149823	-3.039879	7.607365	181.7308	2.03e-41	7.13e-38	VPS51	
+ENSG00000162627	-2.151862	6.791171	176.2583	3.18e-40	6.38e-37	SNX7	
+1-10 of 10 rows | 1-7 of 13 columns
+3 Other datasets
+3.1 Variants
+Now we will try a different database (“ENSEMBL_MART_SNP”) containing genetic variants. Select the mart and dataset, this can be done in two steps as before, or using a single command. Then use listFilters() and listAttributes() to see the filters and attributes available for this dataset.
+
+#ensembl_snp = useMart("ENSEMBL_MART_SNP")
+#snp_mart = useDataset("hsapiens_snp",mart=ensembl_snp)
+snp_mart = useMart(biomart = "ENSEMBL_MART_SNP", dataset="hsapiens_snp")
+Retrieve all common (minor allele frequency >= 0.01) nonsynonymous SNPs in the genes above (q_genes) and find at least the variant names, positions and consequences.
+
+snps <- getBM(attributes = c('refsnp_id','allele','chrom_start','chrom_strand','consequence_type_tv',"minor_allele_freq", "associated_gene"), 
+      filters = c('ensembl_gene','minor_allele_freq_second'), 
+      values = list(q_genes,'0.01'), 
+      mart = snp_mart) %>% 
+  filter(consequence_type_tv == "missense_variant")
+
+snps
+refsnp_id
+<chr>
+allele
+<chr>
+chrom_start
+<int>
+chrom_strand
+<int>
+consequence_type_tv
+<chr>
+rs145088108	G/A	32274765	1	missense_variant	
+1 row | 1-5 of 7 columns
+3.2 Linking datasets
+It is also possible to link information between different datasets, e.g. to find orthologs between species. To do this you access two datasets at once, called the primary and the linked datasets. The function uses attributes, filters and values to query each dataset.
+
+human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+
+getLDS(attributes = c("hgnc_symbol","chromosome_name", "start_position"),
+       filters = "hgnc_symbol", values = "SRC",mart = human,
+      attributesL = c("mgi_id","chromosome_name","start_position"), martL = mouse)
+HGNC.symbol
+<chr>
+Chromosome.scaffold.name
+<int>
+Gene.start..bp.
+<int>
+MGI.ID
+<chr>
+SRC	20	37344685	MGI:98397	
+1 row | 1-4 of 6 columns
+4 Session Info
+This document has been created in RStudio using R Markdown and related packages.
+For R Markdown, see http://rmarkdown.rstudio.com
+For details about the OS, packages and versions, see detailed information below:
+sessionInfo()
+## R version 3.4.3 (2017-11-30)
+## Platform: x86_64-apple-darwin15.6.0 (64-bit)
+## Running under: OS X El Capitan 10.11.6
+## 
+## Matrix products: default
+## BLAS: /Library/Frameworks/R.framework/Versions/3.4/Resources/lib/libRblas.0.dylib
+## LAPACK: /Library/Frameworks/R.framework/Versions/3.4/Resources/lib/libRlapack.dylib
+## 
+## locale:
+## [1] sv_SE.UTF-8/sv_SE.UTF-8/sv_SE.UTF-8/C/sv_SE.UTF-8/sv_SE.UTF-8
+## 
+## attached base packages:
+## [1] stats     graphics  grDevices utils     datasets  methods   base     
+## 
+## other attached packages:
+##  [1] bindrcpp_0.2.2  biomaRt_2.34.2  bsplus_0.1.1    forcats_0.3.0  
+##  [5] stringr_1.3.1   dplyr_0.7.5     purrr_0.2.5     readr_1.1.1    
+##  [9] tidyr_0.8.1     tibble_1.4.2    ggplot2_2.2.1   tidyverse_1.2.1
+## [13] captioner_2.2.3 bookdown_0.7    knitr_1.20     
+## 
+## loaded via a namespace (and not attached):
+##  [1] Biobase_2.38.0       httr_1.3.1           bit64_0.9-7         
+##  [4] jsonlite_1.5         modelr_0.1.2         assertthat_0.2.0    
+##  [7] stats4_3.4.3         blob_1.1.1           cellranger_1.1.0    
+## [10] yaml_2.1.19          progress_1.2.0       pillar_1.2.3        
+## [13] RSQLite_2.1.1        backports_1.1.2      lattice_0.20-35     
+## [16] glue_1.2.0           digest_0.6.15        rvest_0.3.2         
+## [19] colorspace_1.3-2     htmltools_0.3.6      plyr_1.8.4          
+## [22] psych_1.8.4          XML_3.98-1.11        pkgconfig_2.0.1     
+## [25] broom_0.4.4          haven_1.1.1          scales_0.5.0        
+## [28] IRanges_2.12.0       BiocGenerics_0.24.0  lazyeval_0.2.1      
+## [31] cli_1.0.0            mnormt_1.5-5         magrittr_1.5        
+## [34] crayon_1.3.4         readxl_1.1.0         memoise_1.1.0       
+## [37] evaluate_0.10.1      nlme_3.1-137         xml2_1.2.0          
+## [40] foreign_0.8-70       tools_3.4.3          prettyunits_1.0.2   
+## [43] hms_0.4.2            S4Vectors_0.16.0     munsell_0.5.0       
+## [46] AnnotationDbi_1.40.0 compiler_3.4.3       rlang_0.2.1         
+## [49] grid_3.4.3           RCurl_1.95-4.10      rstudioapi_0.7      
+## [52] bitops_1.0-6         rmarkdown_1.10       gtable_0.2.0        
+## [55] DBI_1.0.0            curl_3.2             reshape2_1.4.3      
+## [58] R6_2.2.2             lubridate_1.7.4      bit_1.1-14          
+## [61] bindr_0.1.1          rprojroot_1.3-2      stringi_1.1.7       
+## [64] parallel_3.4.3       Rcpp_0.12.17         tidyselect_0.2.4    
+## [67] xfun_0.1
+Page built on: 15-Jun-2018 at 18:44:05.
+
+2018 | SciLifeLab > NBIS > RaukR website  twitter
